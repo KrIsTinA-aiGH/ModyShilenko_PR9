@@ -4,24 +4,41 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Navigation;
+using System.Threading.Tasks;
+using System;
 
 namespace Shilenko_wpf1.Pages
 {
     public partial class Autho : Page
     {
         int attempts = 0;
+        private bool isBlocked = false;
+        private System.Windows.Threading.DispatcherTimer blockTimer;
 
         public Autho()
         {
             InitializeComponent();
+            InitializeTimer();
             ResetForm();
         }
 
-        private void btnEnterGuest_Click(object sender, RoutedEventArgs e) =>
-            NavigationService.Navigate(new Client(null, "Гость"));
+        private void InitializeTimer()
+        {
+            blockTimer = new System.Windows.Threading.DispatcherTimer();
+            blockTimer.Interval = TimeSpan.FromSeconds(1);
+            blockTimer.Tick += BlockTimer_Tick;
+        }
+
+        private void btnEnterGuest_Click(object sender, RoutedEventArgs e)
+        {
+            if (!isBlocked)
+                NavigationService.Navigate(new Client(null, "Гость"));
+        }
 
         private void btnEnter_Click(object sender, RoutedEventArgs e)
         {
+            if (isBlocked) return;
+
             attempts++;
             var login = tbLogin.Text.Trim();
             var password = tbPassword.Password.Trim();
@@ -39,26 +56,30 @@ namespace Shilenko_wpf1.Pages
                 {
                     var user = db.Users.FirstOrDefault(x => x.Email == login && x.Password == password);
 
-                    if (attempts == 1)
+                    if (attempts <= 3)
                     {
-                        if (user != null) LoginSuccess(user);
-                        else ShowErrorAndCaptcha();
-                    }
-                    else if (attempts > 1)
-                    {
-                        if (user != null && (tbCaptcha.Visibility != Visibility.Visible || tbCaptcha.Text == tblCaptcha.Text))
+                        if (user != null)
+                        {
                             LoginSuccess(user);
+                            attempts = 0; 
+                        }
                         else
                         {
-                            MessageBox.Show("Неверные данные!" + (tbCaptcha.Visibility == Visibility.Visible ? " или капча" : ""));
-                            ResetForm();
+                            ShowErrorAndCaptcha();
+
+                            //блокировка после 3 неудачных попыток
+                            if (attempts == 3)
+                            {
+                                BlockForm(10); //блокировка на 10 секунд
+                            }
                         }
                     }
                 }
             }
             catch
             {
-                NavigationService.Navigate(new Client(null, "Гость"));
+                if (!isBlocked)
+                    NavigationService.Navigate(new Client(null, "Гость"));
             }
         }
 
@@ -105,11 +126,71 @@ namespace Shilenko_wpf1.Pages
 
         private void ResetForm()
         {
-            tbLogin.Clear();
-            tbPassword.Clear();
-            tbCaptcha.Clear();
-            HideCaptcha();
+            if (!isBlocked)
+            {
+                tbLogin.Clear();
+                tbPassword.Clear();
+                tbCaptcha.Clear();
+                HideCaptcha();
+            }
+        }
+
+        private void BlockForm(int seconds)
+        {
+            //флаг блокировки
+            isBlocked = true;
+            remainingBlockTime = seconds; //запоминаем время блокировки
+
+            tbLogin.IsEnabled = false;
+            tbPassword.IsEnabled = false;
+            tbCaptcha.IsEnabled = false;
+            btnEnter.IsEnabled = false;
+            btnEnterGuest.IsEnabled = false;
+
+            //показ таймера
+            tbTimer.Visibility = Visibility.Visible;
+            UpdateTimerText();
+
+            //запуск таймера
+            blockTimer.Start();
+        }
+
+        private int remainingBlockTime = 0;
+
+        private void BlockTimer_Tick(object sender, EventArgs e)
+        {
+            remainingBlockTime--;
+            UpdateTimerText();
+
+            if (remainingBlockTime <= 0)
+            {
+                UnblockForm();
+            }
+        }
+
+        private void UpdateTimerText()
+        {
+            tbTimer.Text = $"До разблокировки осталось: {remainingBlockTime} сек.";
+        }
+
+        private void UnblockForm()
+        {
+            blockTimer.Stop();
+            isBlocked = false;
             attempts = 0;
+
+            //разблокировка элементов управления
+            tbLogin.IsEnabled = true;
+            tbPassword.IsEnabled = true;
+            tbCaptcha.IsEnabled = true;
+            btnEnter.IsEnabled = true;
+            btnEnterGuest.IsEnabled = true;
+
+            //скрытие таймера
+            tbTimer.Visibility = Visibility.Collapsed;
+
+            //сброс формы
+            ResetForm();
         }
     }
 }
