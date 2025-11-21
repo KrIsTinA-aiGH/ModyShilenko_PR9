@@ -136,6 +136,7 @@
       <DependentUpon>Client.xaml</DependentUpon>
     </Compile>
     <Compile Include="Services\Hash.cs" />
+    <Compile Include="Services\TimeService.cs" />
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

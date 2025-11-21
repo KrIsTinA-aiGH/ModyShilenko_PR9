@@ -13,6 +13,7 @@ namespace Shilenko_wpf1.Pages
     {
         int attempts = 0;
         private bool isBlocked = false;
+        private bool captchaRequired = false;
         private System.Windows.Threading.DispatcherTimer blockTimer;
 
         public Autho()
@@ -39,6 +40,17 @@ namespace Shilenko_wpf1.Pages
         {
             if (isBlocked) return;
 
+            //проверка капчи, если она требуется
+            if (captchaRequired)
+            {
+                if (string.IsNullOrWhiteSpace(tbCaptcha.Text) || tbCaptcha.Text != tblCaptcha.Text.Replace(" ", ""))
+                {
+                    MessageBox.Show("Неверная капча!");
+                    ShowCaptcha();
+                    return;
+                }
+            }
+
             attempts++;
             var login = tbLogin.Text.Trim();
             var password = tbPassword.Password.Trim();
@@ -56,22 +68,27 @@ namespace Shilenko_wpf1.Pages
                 {
                     var user = db.Users.FirstOrDefault(x => x.Email == login && x.Password == password);
 
-                    if (attempts <= 3)
+                    if (user != null)
                     {
-                        if (user != null)
+                        //проверка рабочего времени только для сотрудников (не для клиентов)
+                        if (!TimeService.IsWithinWorkingHours() && TimeService.IsEmployee(user))
                         {
-                            LoginSuccess(user);
-                            attempts = 0; 
+                            MessageBox.Show("Доступ разрешен только в рабочее время (10:00-19:00)!");
+                            return;
                         }
-                        else
-                        {
-                            ShowErrorAndCaptcha();
 
-                            //блокировка после 3 неудачных попыток
-                            if (attempts == 3)
-                            {
-                                BlockForm(10); //блокировка на 10 секунд
-                            }
+                        LoginSuccess(user);
+                        attempts = 0;
+                        captchaRequired = false;
+                        HideCaptcha();
+                    }
+                    else
+                    {
+                        ShowErrorAndCaptcha();
+
+                        if (attempts >= 4)
+                        {
+                            BlockForm(10);
                         }
                     }
                 }
@@ -83,6 +100,7 @@ namespace Shilenko_wpf1.Pages
             }
         }
 
+
         private void LoginSuccess(Users user)
         {
             var role = GetRole(user);
@@ -93,6 +111,8 @@ namespace Shilenko_wpf1.Pages
         private void ShowErrorAndCaptcha()
         {
             MessageBox.Show("Неверный логин или пароль!");
+
+            captchaRequired = true;
             ShowCaptcha();
             tbPassword.Clear();
         }
@@ -110,6 +130,7 @@ namespace Shilenko_wpf1.Pages
         {
             tbCaptcha.Visibility = Visibility.Hidden;
             tblCaptcha.Visibility = Visibility.Hidden;
+            captchaRequired = false;
         }
 
         private string GetRole(Users user)
@@ -137,9 +158,8 @@ namespace Shilenko_wpf1.Pages
 
         private void BlockForm(int seconds)
         {
-            //флаг блокировки
             isBlocked = true;
-            remainingBlockTime = seconds; //запоминаем время блокировки
+            remainingBlockTime = seconds;
 
             tbLogin.IsEnabled = false;
             tbPassword.IsEnabled = false;
@@ -147,11 +167,9 @@ namespace Shilenko_wpf1.Pages
             btnEnter.IsEnabled = false;
             btnEnterGuest.IsEnabled = false;
 
-            //показ таймера
             tbTimer.Visibility = Visibility.Visible;
             UpdateTimerText();
 
-            //запуск таймера
             blockTimer.Start();
         }
 
@@ -178,18 +196,16 @@ namespace Shilenko_wpf1.Pages
             blockTimer.Stop();
             isBlocked = false;
             attempts = 0;
+            captchaRequired = false;
 
-            //разблокировка элементов управления
             tbLogin.IsEnabled = true;
             tbPassword.IsEnabled = true;
             tbCaptcha.IsEnabled = true;
             btnEnter.IsEnabled = true;
             btnEnterGuest.IsEnabled = true;
 
-            //скрытие таймера
             tbTimer.Visibility = Visibility.Collapsed;
 
-            //сброс формы
             ResetForm();
         }
     }
