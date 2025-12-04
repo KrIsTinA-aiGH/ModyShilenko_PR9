@@ -1,6 +1,7 @@
 ﻿using Shilenko_wpf1.Models;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,10 +20,21 @@ namespace Shilenko_wpf1.Pages
             LoadData();
         }
 
+        private void Page_Loaded(object sender, RoutedEventArgs e)
+        {
+            LoadData();
+        }
+
+
         private void LoadData()
         {
             try
             {
+                if (_db != null)
+                {
+                    _db.Dispose();
+                }
+
                 _db = new AutobaseEntities();
                 _allEmployees = _db.Employees.Include("EmployeePositions").ToList();
 

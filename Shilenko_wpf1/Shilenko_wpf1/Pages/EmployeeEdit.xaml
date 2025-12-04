@@ -9,9 +9,8 @@
       Title="Добавление/редактирование сотрудника">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="20">
+        <Grid Background="White" Margin="20">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -75,17 +74,21 @@
             <TextBlock Grid.Row="7" Grid.Column="0" Text="Фотография:" 
                        VerticalAlignment="Top" Margin="0,5"/>
             <StackPanel Grid.Row="7" Grid.Column="1" Margin="5">
-                <Image x:Name="imgPhoto" Width="150" Height="150" 
-                       Source="/Resources/picture.png" Stretch="Uniform"/>
+                <Image x:Name="imgPhoto" Width="120" Height="120" 
+       Stretch="Uniform" Margin="10">
+                    <Image.Source>
+                        <BitmapImage UriSource="/Resources/picture.png"/>
+                    </Image.Source>
+                </Image>
                 <Button x:Name="btnSelectImage" Content="Выбрать изображение" 
                         Margin="0,5,0,0" Padding="5,2" Click="btnSelectImage_Click"/>
             </StackPanel>
 
             <!-- Путь к изображению -->
             <TextBlock Grid.Row="8" Grid.Column="0" Text="Путь к изображению:" 
-                       VerticalAlignment="Center" Margin="0,5"/>
+           VerticalAlignment="Center" Margin="0,10"/>
             <TextBox Grid.Row="8" Grid.Column="1" x:Name="txtImagePath" 
-                     Margin="5" MinWidth="200" IsReadOnly="True"/>
+         Margin="0,10" Height="25" VerticalContentAlignment="Center" IsReadOnly="True"/>
 
             <!-- Кнопки -->
             <StackPanel Grid.Row="11" Grid.ColumnSpan="2" 

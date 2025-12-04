@@ -4,7 +4,7 @@
   <edmx:Runtime>
     <!-- SSDL content -->
     <edmx:StorageModels>
-      <Schema Namespace="Хранилище AutobaseModel" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+    <Schema Namespace="Хранилище AutobaseModel" Provider="System.Data.SqlClient" ProviderManifestToken="2012" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
         <EntityType Name="Cars">
           <Key>
             <PropertyRef Name="CarID" />
@@ -59,6 +59,7 @@
           <Property Name="HireDate" Type="date" Nullable="false" />
           <Property Name="Phone" Type="nvarchar" MaxLength="20" />
           <Property Name="Email" Type="nvarchar" MaxLength="100" />
+          <Property Name="PhotoPath" Type="nvarchar" MaxLength="500" />
         </EntityType>
         <EntityType Name="Maintenance">
           <Key>
@@ -453,8 +454,7 @@
             <End Role="Users" EntitySet="Users" />
           </AssociationSet>
         </EntityContainer>
-      </Schema>
-    </edmx:StorageModels>
+      </Schema></edmx:StorageModels>
     <!-- CSDL content -->
     <edmx:ConceptualModels>
       <Schema Namespace="AutobaseModel" Alias="Self" annotation:UseStrongSpatialTypes="false" xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm">
@@ -524,6 +524,7 @@
           <NavigationProperty Name="Drivers" Relationship="Self.FK__Drivers__Employe__412EB0B6" FromRole="Employees" ToRole="Drivers" />
           <NavigationProperty Name="EmployeePositions" Relationship="Self.FK__Employees__Posit__3D5E1FD2" FromRole="Employees" ToRole="EmployeePositions" />
           <NavigationProperty Name="Users" Relationship="Self.FK_AuthUsers_Employees" FromRole="Employees" ToRole="Users" />
+          <Property Name="PhotoPath" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
         </EntityType>
         <EntityType Name="Maintenance">
           <Key>
@@ -994,6 +995,7 @@
           <EntitySetMapping Name="Employees">
             <EntityTypeMapping TypeName="AutobaseModel.Employees">
               <MappingFragment StoreEntitySet="Employees">
+                <ScalarProperty Name="PhotoPath" ColumnName="PhotoPath" />
                 <ScalarProperty Name="EmployeeID" ColumnName="EmployeeID" />
                 <ScalarProperty Name="FirstName" ColumnName="FirstName" />
                 <ScalarProperty Name="LastName" ColumnName="LastName" />

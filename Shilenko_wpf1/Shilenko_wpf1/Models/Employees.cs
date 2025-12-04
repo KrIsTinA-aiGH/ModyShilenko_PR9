@@ -28,6 +28,7 @@ namespace Shilenko_wpf1.Models
         public System.DateTime HireDate { get; set; }
         public string Phone { get; set; }
         public string Email { get; set; }
+        public string PhotoPath { get; set; }
     
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
         public virtual ICollection<Drivers> Drivers { get; set; }

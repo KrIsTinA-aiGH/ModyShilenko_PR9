@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Navigation;
 using System.Threading.Tasks;
 using System;
+using System.Data.Entity;
 
 namespace Shilenko_wpf1.Pages
 {
@@ -135,13 +136,54 @@ namespace Shilenko_wpf1.Pages
 
         private string GetRole(Users user)
         {
+            try
+            {
+                using (var db = new AutobaseEntities())
+                {
+                    // Загружаем пользователя с связанными данными
+                    var currentUser = db.Users
+                        .Include("Employees.EmployeePositions")
+                        .FirstOrDefault(u => u.UserID == user.UserID);
+
+                    // Если пользователь - сотрудник, проверяем его должность
+                    if (currentUser?.Employees != null)
+                    {
+                        var positionName = currentUser.Employees.EmployeePositions?.PositionName;
+
+                        if (!string.IsNullOrEmpty(positionName))
+                        {
+                            // Определяем роль по должности
+                            if (positionName.Contains("Директор")) return "Директор";
+                            if (positionName.Contains("Менеджер")) return "Менеджер";
+                            if (positionName.Contains("Водитель")) return "Водитель";
+                            if (positionName.Contains("Диспетчер")) return "Диспетчер";
+                            if (positionName.Contains("Механик")) return "Механик";
+                        }
+
+                        return "Сотрудник";
+                    }
+                    // Если пользователь - клиент
+                    else if (currentUser?.Clients != null)
+                    {
+                        return "Клиент";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка определения роли: {ex.Message}");
+            }
+
+            // Fallback: проверяем по email
             var email = user.Email.ToLower();
             if (email.Contains("admin")) return "Администратор";
+            if (email.Contains("director")) return "Директор";
             if (email.Contains("manager")) return "Менеджер";
             if (email.Contains("driver")) return "Водитель";
             if (email.Contains("dispatcher")) return "Диспетчер";
             if (email.Contains("mechanic")) return "Механик";
             if (email.Contains("client")) return "Клиент";
+
             return "Пользователь";
         }
 
