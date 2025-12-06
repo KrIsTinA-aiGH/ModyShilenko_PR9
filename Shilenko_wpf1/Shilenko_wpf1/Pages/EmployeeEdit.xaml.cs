@@ -1,39 +1,42 @@
 ﻿using Microsoft.Win32;
 using Shilenko_wpf1.Models;
 using System;
+using System.IO;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
-using System.IO;
-
 
 namespace Shilenko_wpf1.Pages
 {
+    // Страница для добавления и редактирования сотрудников
     public partial class EmployeeEdit : Page
     {
-        private Employees _currentEmployee;
-        private AutobaseEntities _db;
-        private string _imagePath;
+        private Employees _employee;    // Текущий сотрудник
+        private string _imagePath;      // Путь к выбранному изображению
 
+        // Конструктор страницы
         public EmployeeEdit(Employees employee)
         {
             InitializeComponent();
-            _currentEmployee = employee ?? new Employees();
-            _db = new AutobaseEntities();
-            LoadPositions();
-            LoadEmployeeData();
+            _employee = employee ?? new Employees(); // Новый сотрудник если null
+            LoadPositions();     // Загрузка списка должностей
+            LoadEmployeeData();  // Загрузка данных сотрудника
         }
 
+        // ==================== МЕТОДЫ ЗАГРУЗКИ ДАННЫХ ====================
+
+        // Загрузка списка должностей из базы данных
         private void LoadPositions()
         {
             try
             {
-                var positions = _db.EmployeePositions.ToList();
-                cmbPosition.ItemsSource = positions;
-                cmbPosition.DisplayMemberPath = "PositionName";
-                cmbPosition.SelectedValuePath = "PositionID";
+                using (var db = new AutobaseEntities())
+                {
+                    cmbPosition.ItemsSource = db.EmployeePositions.ToList(); // Привязка к ComboBox
+                    cmbPosition.DisplayMemberPath = "PositionName";   // Отображаемое поле
+                    cmbPosition.SelectedValuePath = "PositionID";     // Значение поля
+                }
             }
             catch (Exception ex)
             {
@@ -41,264 +44,242 @@ namespace Shilenko_wpf1.Pages
             }
         }
 
+        // Загрузка данных сотрудника в форму
         private void LoadEmployeeData()
         {
-            if (_currentEmployee.EmployeeID == 0) // Новый сотрудник
-            {
-                tbTitle.Text = "Добавление сотрудника";
-                btnDelete.Visibility = Visibility.Collapsed;
-                dpHireDate.SelectedDate = DateTime.Today;
+            bool isNew = _employee.EmployeeID == 0; // Проверка нового сотрудника
 
-                // Устанавливаем изображение по умолчанию
-                SetDefaultImage();
-                txtImagePath.Text = "Изображение не выбрано";
+            // Настройка заголовка и видимости кнопок
+            tbTitle.Text = isNew ? "Добавление сотрудника" : "Редактирование сотрудника";
+            btnDelete.Visibility = isNew ? Visibility.Collapsed : Visibility.Visible; // Кнопка удаления только для существующих
+            dpHireDate.SelectedDate = isNew ? DateTime.Today : _employee.HireDate; // Дата по умолчанию
+
+            // Заполнение полей для существующего сотрудника
+            if (!isNew)
+            {
+                txtLastName.Text = _employee.LastName;
+                txtFirstName.Text = _employee.FirstName;
+                cmbPosition.SelectedValue = _employee.PositionID;
+                txtPhone.Text = _employee.Phone;
+                txtEmail.Text = _employee.Email;
             }
-            else // Редактирование существующего
+
+            LoadImage(); // Загрузка фотографии
+        }
+
+        // ==================== МЕТОДЫ РАБОТЫ С ИЗОБРАЖЕНИЯМИ ====================
+
+        // Загрузка изображения сотрудника
+        private void LoadImage()
+        {
+            if (!string.IsNullOrEmpty(_employee.PhotoPath) && File.Exists(GetImageFullPath()))
             {
-                tbTitle.Text = "Редактирование сотрудника";
-                btnDelete.Visibility = Visibility.Visible;
-
-                // Загружаем данные сотрудника
-                txtLastName.Text = _currentEmployee.LastName;
-                txtFirstName.Text = _currentEmployee.FirstName;
-                cmbPosition.SelectedValue = _currentEmployee.PositionID;
-                dpHireDate.SelectedDate = _currentEmployee.HireDate;
-                txtPhone.Text = _currentEmployee.Phone;
-                txtEmail.Text = _currentEmployee.Email;
-
-                // TODO: Здесь можно добавить загрузку сохраненного изображения из базы
-                // Пока просто показываем, что изображение не выбрано
-                SetDefaultImage();
-                txtImagePath.Text = "Изображение не сохранено в базе";
-            }
-            // Загружаем сохраненное изображение если есть
-            if (!string.IsNullOrEmpty(_currentEmployee.PhotoPath))
-            {
-                try
-                {
-                    string imagesFolder = GetEmployeeImagesFolder();
-                    string imageFullPath = Path.Combine(imagesFolder, _currentEmployee.PhotoPath);
-
-                    if (File.Exists(imageFullPath))
-                    {
-                        // Загружаем изображение
-                        BitmapImage bitmap = new BitmapImage();
-                        bitmap.BeginInit();
-                        bitmap.UriSource = new Uri(imageFullPath);
-                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                        bitmap.EndInit();
-                        bitmap.Freeze();
-
-                        imgPhoto.Source = bitmap;
-                        txtImagePath.Text = imageFullPath;
-                    }
-                    else
-                    {
-                        SetDefaultImage();
-                        txtImagePath.Text = "Файл изображения не найден: " + _currentEmployee.PhotoPath;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SetDefaultImage();
-                    txtImagePath.Text = $"Ошибка загрузки: {ex.Message}";
-                }
+                SetImageSource(GetImageFullPath()); // Загрузка изображения
+                txtImagePath.Text = _employee.PhotoPath;
             }
             else
             {
-                SetDefaultImage();
-                txtImagePath.Text = "Изображение не сохранено";
+                SetDefaultImage(); // Установка изображения по умолчанию
+                txtImagePath.Text = string.IsNullOrEmpty(_employee.PhotoPath) ?
+                    "Изображение не сохранено" : "Файл не найден";
             }
         }
 
-        private void btnSelectImage_Click(object sender, RoutedEventArgs e)
+        // Установка источника изображения
+        private void SetImageSource(string path)
         {
-            OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Image files (*.png;*.jpeg;*.jpg)|*.png;*.jpeg;*.jpg|All files (*.*)|*.*";
-            openFileDialog.Title = "Выберите фотографию сотрудника";
-
-            if (openFileDialog.ShowDialog() == true)
+            try
             {
-                _imagePath = openFileDialog.FileName;
-                txtImagePath.Text = _imagePath; // Показываем путь
-
-                try
-                {
-                    // Загружаем изображение
-                    BitmapImage bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(_imagePath);
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    bitmap.Freeze(); // Делаем изображение потокобезопасным
-
-                    imgPhoto.Source = bitmap;
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Не удалось загрузить изображение: {ex.Message}",
-                                  "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                    SetDefaultImage();
-                }
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(path);
+                bitmap.CacheOption = BitmapCacheOption.OnLoad; // Загрузка в память
+                bitmap.EndInit();
+                bitmap.Freeze(); // Заморозка для использования в UI
+                imgPhoto.Source = bitmap;
+            }
+            catch
+            {
+                SetDefaultImage(); // При ошибке - изображение по умолчанию
             }
         }
 
+        // Установка изображения по умолчанию
         private void SetDefaultImage()
         {
             try
             {
-                var defaultImage = new BitmapImage();
-                defaultImage.BeginInit();
-                defaultImage.UriSource = new Uri("pack://application:,,,/Resources/picture.png");
-                defaultImage.CacheOption = BitmapCacheOption.OnLoad;
-                defaultImage.EndInit();
-                defaultImage.Freeze();
-
-                imgPhoto.Source = defaultImage;
+                imgPhoto.Source = new BitmapImage(new Uri("pack://application:,,,/Resources/picture.png"));
             }
             catch
             {
-                // Если файл по умолчанию не найден, используем пустой источник
-                imgPhoto.Source = null;
+                imgPhoto.Source = null; // Если изображение не найдено
             }
         }
 
+        // ==================== МЕТОДЫ РАБОТЫ С ФАЙЛАМИ ====================
+
+        // Получение пути к папке с изображениями
+        private string GetImagesFolder()
+        {
+            string folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EmployeeImages");
+            if (!Directory.Exists(folder)) Directory.CreateDirectory(folder); // Создание если не существует
+            return folder;
+        }
+
+        // Получение полного пути к изображению
+        private string GetImageFullPath()
+        {
+            return Path.Combine(GetImagesFolder(), _employee.PhotoPath);
+        }
+
+        // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
+
+        // Обработчик выбора изображения
+        private void btnSelectImage_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "Изображения (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|Все файлы|*.*",
+                Title = "Выберите фотографию"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                _imagePath = dialog.FileName; // Сохранение пути
+                txtImagePath.Text = _imagePath; // Отображение пути
+                SetImageSource(_imagePath); // Отображение изображения
+            }
+        }
+
+        // Обработчик кнопки сохранения
         private void btnSave_Click(object sender, RoutedEventArgs e)
         {
-            StringBuilder errors = new StringBuilder();
-
-            if (string.IsNullOrWhiteSpace(txtLastName.Text))
-                errors.AppendLine("Введите фамилию");
-            if (string.IsNullOrWhiteSpace(txtFirstName.Text))
-                errors.AppendLine("Введите имя");
-            if (cmbPosition.SelectedItem == null)
-                errors.AppendLine("Выберите должность");
-            if (dpHireDate.SelectedDate == null)
-                errors.AppendLine("Выберите дату приёма");
-            if (string.IsNullOrWhiteSpace(txtEmail.Text))
-                errors.AppendLine("Введите email");
-
-            if (errors.Length > 0)
-            {
-                MessageBox.Show(errors.ToString(), "Ошибка",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
+            if (!ValidateForm()) return; // Валидация формы
 
             try
             {
-                // Заполняем данные сотрудника
-                _currentEmployee.LastName = txtLastName.Text;
-                _currentEmployee.FirstName = txtFirstName.Text;
-                _currentEmployee.PositionID = (int)cmbPosition.SelectedValue;
-                _currentEmployee.HireDate = dpHireDate.SelectedDate.Value;
-                _currentEmployee.Phone = txtPhone.Text;
-                _currentEmployee.Email = txtEmail.Text;
-
-                // Сохраняем сотрудника в БД чтобы получить EmployeeID
-                if (_currentEmployee.EmployeeID == 0) // Новый сотрудник
-                {
-                    _db.Employees.Add(_currentEmployee);
-                }
-
-                _db.SaveChanges(); // Сохраняем чтобы получить EmployeeID для новых
-
-                // Если выбрано новое изображение, сохраняем его
-                if (!string.IsNullOrEmpty(_imagePath) && File.Exists(_imagePath))
-                {
-                    string imagesFolder = GetEmployeeImagesFolder();
-
-                    // Создаем уникальное имя файла
-                    string fileName = $"emp_{_currentEmployee.EmployeeID}_{Guid.NewGuid():N}{Path.GetExtension(_imagePath)}";
-                    string destinationPath = Path.Combine(imagesFolder, fileName);
-
-                    // Копируем файл
-                    File.Copy(_imagePath, destinationPath, true);
-
-                    // Сохраняем только имя файла в базу (без полного пути)
-                    _currentEmployee.PhotoPath = fileName;
-
-                    // Обновляем запись в базе
-                    var employeeInDb = _db.Employees.Find(_currentEmployee.EmployeeID);
-                    if (employeeInDb != null)
-                    {
-                        employeeInDb.PhotoPath = fileName;
-                        _db.SaveChanges();
-                    }
-
-                    MessageBox.Show($"Изображение сохранено", "Информация",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else if (_currentEmployee.EmployeeID > 0) // Редактирование существующего
-                {
-                    // Обновляем другие данные для существующего сотрудника
-                    var employeeInDb = _db.Employees.Find(_currentEmployee.EmployeeID);
-                    if (employeeInDb != null)
-                    {
-                        employeeInDb.LastName = _currentEmployee.LastName;
-                        employeeInDb.FirstName = _currentEmployee.FirstName;
-                        employeeInDb.PositionID = _currentEmployee.PositionID;
-                        employeeInDb.HireDate = _currentEmployee.HireDate;
-                        employeeInDb.Phone = _currentEmployee.Phone;
-                        employeeInDb.Email = _currentEmployee.Email;
-                        _db.SaveChanges();
-                    }
-                }
-
-                MessageBox.Show("Данные сохранены успешно", "Успех",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-
-                NavigationService.GoBack();
+                UpdateEmployeeData();    // Обновление данных объекта
+                SaveEmployee();         // Сохранение в базу данных
+                SaveImageIfNeeded();    // Сохранение изображения
+                MessageBox.Show("Данные сохранены", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                NavigationService.GoBack(); // Возврат на предыдущую страницу
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка сохранения: {ex.Message}", "Ошибка",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-        private string GetEmployeeImagesFolder()
-        {
-            // Путь к исполняемому файлу
-            string appPath = AppDomain.CurrentDomain.BaseDirectory;
-            string imagesFolder = Path.Combine(appPath, "EmployeeImages");
 
-            // Создаем папку если ее нет
-            if (!Directory.Exists(imagesFolder))
-            {
-                Directory.CreateDirectory(imagesFolder);
-            }
-
-            return imagesFolder;
-        }
+        // Обработчик кнопки удаления
         private void btnDelete_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("Вы действительно хотите удалить этого сотрудника?",
-                "Подтверждение удаления", MessageBoxButton.YesNo,
-                MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show("Удалить сотрудника?", "Подтверждение",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 try
                 {
-                    var employeeToDelete = _db.Employees.Find(_currentEmployee.EmployeeID);
-                    if (employeeToDelete != null)
+                    using (var db = new AutobaseEntities())
                     {
-                        _db.Employees.Remove(employeeToDelete);
-                        _db.SaveChanges();
-                        MessageBox.Show("Сотрудник удален", "Успех",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
-                        NavigationService.GoBack();
+                        var employee = db.Employees.Find(_employee.EmployeeID);
+                        if (employee != null)
+                        {
+                            db.Employees.Remove(employee); // Удаление из базы
+                            db.SaveChanges();
+                        }
                     }
+                    MessageBox.Show("Сотрудник удален", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                    NavigationService.GoBack();
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Ошибка удаления: {ex.Message}", "Ошибка",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Ошибка удаления: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
 
+        // Обработчик кнопки отмены
         private void btnCancel_Click(object sender, RoutedEventArgs e)
         {
-            NavigationService.GoBack();
+            NavigationService.GoBack(); // Возврат без сохранения
+        }
+
+        // ==================== МЕТОДЫ ВАЛИДАЦИИ И СОХРАНЕНИЯ ====================
+
+        // Валидация данных формы
+        private bool ValidateForm()
+        {
+            if (string.IsNullOrWhiteSpace(txtLastName.Text) || string.IsNullOrWhiteSpace(txtFirstName.Text) ||
+                cmbPosition.SelectedItem == null || dpHireDate.SelectedDate == null ||
+                string.IsNullOrWhiteSpace(txtEmail.Text))
+            {
+                MessageBox.Show("Заполните все обязательные поля", "Ошибка",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+            return true;
+        }
+
+        // Обновление данных объекта сотрудника из формы
+        private void UpdateEmployeeData()
+        {
+            _employee.LastName = txtLastName.Text;
+            _employee.FirstName = txtFirstName.Text;
+            _employee.PositionID = (int)cmbPosition.SelectedValue;
+            _employee.HireDate = dpHireDate.SelectedDate.Value;
+            _employee.Phone = txtPhone.Text;
+            _employee.Email = txtEmail.Text;
+        }
+
+        // Сохранение сотрудника в базу данных
+        private void SaveEmployee()
+        {
+            using (var db = new AutobaseEntities())
+            {
+                if (_employee.EmployeeID == 0) // Добавление нового
+                {
+                    db.Employees.Add(_employee);
+                }
+                else // Обновление существующего
+                {
+                    var existing = db.Employees.Find(_employee.EmployeeID);
+                    if (existing != null)
+                    {
+                        existing.LastName = _employee.LastName;
+                        existing.FirstName = _employee.FirstName;
+                        existing.PositionID = _employee.PositionID;
+                        existing.HireDate = _employee.HireDate;
+                        existing.Phone = _employee.Phone;
+                        existing.Email = _employee.Email;
+                        existing.PhotoPath = _employee.PhotoPath;
+                    }
+                }
+                db.SaveChanges(); // Сохранение изменений
+            }
+        }
+
+        // Сохранение изображения если оно было выбрано
+        private void SaveImageIfNeeded()
+        {
+            if (!string.IsNullOrEmpty(_imagePath) && File.Exists(_imagePath))
+            {
+                string fileName = $"emp_{_employee.EmployeeID}_{Guid.NewGuid():N}{Path.GetExtension(_imagePath)}";
+                string destPath = Path.Combine(GetImagesFolder(), fileName);
+
+                File.Copy(_imagePath, destPath, true); // Копирование файла
+                _employee.PhotoPath = fileName; // Сохранение имени файла
+
+                // Обновление пути в базе данных
+                using (var db = new AutobaseEntities())
+                {
+                    var employee = db.Employees.Find(_employee.EmployeeID);
+                    if (employee != null)
+                    {
+                        employee.PhotoPath = fileName;
+                        db.SaveChanges();
+                    }
+                }
+            }
         }
     }
 }

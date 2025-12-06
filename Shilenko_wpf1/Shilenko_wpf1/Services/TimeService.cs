@@ -1,100 +1,68 @@
 ﻿using Shilenko_wpf1.Models;
 using System;
-using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 
 namespace Shilenko_wpf1.Services
 {
+    // Сервис для работы с временем и пользователями
     public static class TimeService
     {
+        // ==================== МЕТОДЫ ВРЕМЕНИ ====================
 
+        // Получение приветствия в зависимости от времени суток
         public static string GetTimeBasedGreeting()
         {
-            var currentTime = DateTime.Now.TimeOfDay;
+            var hour = DateTime.Now.Hour; // Текущий час
 
-            if (currentTime >= new TimeSpan(10, 0, 0) && currentTime <= new TimeSpan(12, 0, 0))
-                return "Доброе утро!";
-            else if (currentTime >= new TimeSpan(12, 1, 0) && currentTime <= new TimeSpan(17, 0, 0))
-                return "Добрый день!";
-            else if (currentTime >= new TimeSpan(17, 1, 0) && currentTime <= new TimeSpan(19, 0, 0))
-                return "Добрый вечер!";
-            else
-                return "Добро пожаловать!";
+            if (hour >= 10 && hour <= 12) return "Доброе утро!";    // Утро: 10:00-12:00
+            if (hour >= 13 && hour <= 17) return "Добрый день!";    // День: 13:00-17:00
+            if (hour >= 18 && hour <= 19) return "Добрый вечер!";   // Вечер: 18:00-19:00
+
+            return "Добро пожаловать!"; // Вне рабочего времени
         }
 
-        //проверяет, находится ли текущее время в рабочем интервале
-        public static bool IsWithinWorkingHours()
-        {
-            var currentTime = DateTime.Now.TimeOfDay;
-            return currentTime >= new TimeSpan(10, 0, 0) && currentTime <= new TimeSpan(19, 0, 0);
-        }
+        // Проверка нахождения в рабочее время (10:00-19:00)
+        public static bool IsWithinWorkingHours() =>
+            DateTime.Now.Hour >= 10 && DateTime.Now.Hour <= 19;
 
-        //получает полное имя пользователя в зависимости от типа
+        // ==================== МЕТОДЫ РАБОТЫ С ПОЛЬЗОВАТЕЛЯМИ ====================
+
+        // Получение полного имени пользователя
         public static string GetFullUserName(Users user)
         {
-            if (user == null) return "Гость";
+            if (user == null) return "Гость"; // Для гостевого входа
 
             try
             {
                 using (var db = new AutobaseEntities())
                 {
-                    //загружаем пользователя с связанными данными
-                    var currentUser = db.Users
-                        .Include("Employees")
-                        .Include("Clients")
+                    // Загрузка пользователя с связанными данными
+                    var dbUser = db.Users
+                        .Include(u => u.Employees)  // Загрузка данных сотрудника
+                        .Include(u => u.Clients)    // Загрузка данных клиента
                         .FirstOrDefault(u => u.UserID == user.UserID);
 
-                    if (currentUser == null) return user.Email;
+                    if (dbUser == null) return user.Email; // Если пользователь не найден
 
-                    //для сотрудников
-                    if (currentUser.Employees != null)
-                    {
-                        return GetEmployeeFullName(currentUser.Employees);
-                    }
-                    //для клиентов
-                    else if (currentUser.Clients != null)
-                    {
-                        return GetClientDisplayName(currentUser.Clients);
-                    }
-                    //дсли тип не определен
-                    else
-                    {
-                        return user.Email;
-                    }
+                    // Формирование имени для сотрудника
+                    if (dbUser.Employees != null)
+                        return $"{dbUser.Employees.LastName} {dbUser.Employees.FirstName}".Trim();
+
+                    // Формирование имени для клиента
+                    if (dbUser.Clients != null)
+                        return dbUser.Clients.ContactPerson ?? dbUser.Clients.CompanyName ?? user.Email;
+
+                    return user.Email; // По умолчанию - email
                 }
             }
-            catch (Exception)
+            catch
             {
-                return user.Email;
+                return user.Email; // При ошибке - email
             }
         }
-        //формирует полное имя сотрудника
-        private static string GetEmployeeFullName(Employees employee)
-        {
-            var parts = new List<string>();
 
-            if (!string.IsNullOrWhiteSpace(employee.LastName))
-                parts.Add(employee.LastName);
-            if (!string.IsNullOrWhiteSpace(employee.FirstName))
-                parts.Add(employee.FirstName);
-
-            return parts.Count > 0 ? string.Join(" ", parts) : employee.Email;
-        }
-
-        //формирует отображаемое имя клиента
-        private static string GetClientDisplayName(Clients client)
-        {
-            if (!string.IsNullOrWhiteSpace(client.ContactPerson))
-                return client.ContactPerson;
-
-
-            if (!string.IsNullOrWhiteSpace(client.CompanyName))
-                return client.CompanyName;
-
-            return client.Email;
-        }
-
-        /// Проверяет является ли пользователь сотрудником
+        // Проверка, является ли пользователь сотрудником
         public static bool IsEmployee(Users user)
         {
             if (user == null) return false;
@@ -103,20 +71,18 @@ namespace Shilenko_wpf1.Services
             {
                 using (var db = new AutobaseEntities())
                 {
-                    var currentUser = db.Users
-                        .Include("Employees")
-                        .FirstOrDefault(u => u.UserID == user.UserID);
-
-                    return currentUser?.Employees != null;
+                    return db.Users
+                        .Include(u => u.Employees)  // Загрузка связи с сотрудником
+                        .Any(u => u.UserID == user.UserID && u.Employees != null); // Проверка наличия сотрудника
                 }
             }
             catch
             {
-                return false;
+                return false; // При ошибке - не сотрудник
             }
         }
 
-        //проверяет является ли пользователь клиентом
+        // Проверка, является ли пользователь клиентом
         public static bool IsClient(Users user)
         {
             if (user == null) return false;
@@ -125,16 +91,14 @@ namespace Shilenko_wpf1.Services
             {
                 using (var db = new AutobaseEntities())
                 {
-                    var currentUser = db.Users
-                        .Include("Clients")
-                        .FirstOrDefault(u => u.UserID == user.UserID);
-
-                    return currentUser?.Clients != null;
+                    return db.Users
+                        .Include(u => u.Clients)  // Загрузка связи с клиентом
+                        .Any(u => u.UserID == user.UserID && u.Clients != null); // Проверка наличия клиента
                 }
             }
             catch
             {
-                return false;
+                return false; // При ошибке - не клиент
             }
         }
     }

@@ -1,65 +1,55 @@
 ﻿using Shilenko_wpf1.Models;
 using Shilenko_wpf1.Services;
+using System;
+using System.Data.Entity;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Navigation;
-using System.Threading.Tasks;
-using System;
-using System.Data.Entity;
+using System.Windows.Threading;
 
 namespace Shilenko_wpf1.Pages
 {
+    /// Страница авторизации пользователей
     public partial class Autho : Page
     {
-        int attempts = 0;
-        private bool isBlocked = false;
-        private bool captchaRequired = false;
-        private System.Windows.Threading.DispatcherTimer blockTimer;
+        // Приватные поля для управления состоянием формы
+        private int _attempts;                      // Счетчик неудачных попыток входа
+        private bool _isBlocked;                    // Флаг блокировки формы
+        private DispatcherTimer _blockTimer;        // Таймер блокировки
+        private int _blockTimeRemaining;            // Оставшееся время блокировки
 
+        // Свойство для проверки необходимости капчи
+        private bool captchaRequired => _attempts >= 2;
+
+        /// Конструктор страницы авторизации
         public Autho()
         {
             InitializeComponent();
-            InitializeTimer();
-            ResetForm();
+            InitializeTimer(); // Инициализация таймера блокировки
         }
 
-        private void InitializeTimer()
-        {
-            blockTimer = new System.Windows.Threading.DispatcherTimer();
-            blockTimer.Interval = TimeSpan.FromSeconds(1);
-            blockTimer.Tick += BlockTimer_Tick;
-        }
+        // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
 
-        private void btnEnterGuest_Click(object sender, RoutedEventArgs e)
-        {
-            if (!isBlocked)
-                NavigationService.Navigate(new Client(null, "Гость"));
-        }
+        /// Обработчик входа как гость
+        private void btnEnterGuest_Click(object sender, RoutedEventArgs e) =>
+            NavigateToClient(null, "Гость");
 
+        /// Обработчик входа с учетными данными
         private void btnEnter_Click(object sender, RoutedEventArgs e)
         {
-            if (isBlocked) return;
+            // Проверка блокировки формы
+            if (_isBlocked) return;
 
-            //проверка капчи, если она требуется
-            if (captchaRequired)
-            {
-                if (string.IsNullOrWhiteSpace(tbCaptcha.Text) || tbCaptcha.Text != tblCaptcha.Text.Replace(" ", ""))
-                {
-                    MessageBox.Show("Неверная капча!");
-                    ShowCaptcha();
-                    return;
-                }
-            }
+            // Проверка капчи при необходимости
+            if (captchaRequired && !ValidateCaptcha()) return;
 
-            attempts++;
+            // Получение и валидация введенных данных
             var login = tbLogin.Text.Trim();
             var password = tbPassword.Password.Trim();
 
-            if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrEmpty(login) || string.IsNullOrEmpty(password))
             {
                 MessageBox.Show("Введите логин и пароль!");
-                attempts--;
                 return;
             }
 
@@ -67,188 +57,206 @@ namespace Shilenko_wpf1.Pages
             {
                 using (var db = new AutobaseEntities())
                 {
-                    var user = db.Users.FirstOrDefault(x => x.Email == login && x.Password == password);
+                    // Поиск пользователя в базе данных
+                    var user = db.Users.FirstOrDefault(u => u.Email == login && u.Password == password);
 
                     if (user != null)
                     {
-                        //проверка рабочего времени только для сотрудников (не для клиентов)
-                        if (!TimeService.IsWithinWorkingHours() && TimeService.IsEmployee(user))
+                        // Проверка рабочего времени для сотрудников
+                        if (TimeService.IsEmployee(user) && !TimeService.IsWithinWorkingHours())
                         {
-                            MessageBox.Show("Доступ разрешен только в рабочее время (10:00-19:00)!");
+                            MessageBox.Show("Доступ только в рабочее время (10:00-19:00)!");
                             return;
                         }
 
-                        LoginSuccess(user);
-                        attempts = 0;
-                        captchaRequired = false;
-                        HideCaptcha();
+                        LoginSuccess(user); // Успешный вход
                     }
                     else
                     {
-                        ShowErrorAndCaptcha();
-
-                        if (attempts >= 4)
-                        {
-                            BlockForm(10);
-                        }
+                        HandleFailedLogin(); // Неудачная попытка входа
                     }
                 }
             }
             catch
             {
-                if (!isBlocked)
-                    NavigationService.Navigate(new Client(null, "Гость"));
+                // При ошибке БД переходим в режим гостя
+                NavigateToClient(null, "Гость");
             }
         }
 
+        // ==================== МЕТОДЫ АВТОРИЗАЦИИ ====================
 
-        private void LoginSuccess(Users user)
-        {
-            var role = GetRole(user);
-            MessageBox.Show($"Вы вошли как: {role}");
-            NavigationService.Navigate(new Client(user, role));
-        }
-
-        private void ShowErrorAndCaptcha()
-        {
-            MessageBox.Show("Неверный логин или пароль!");
-
-            captchaRequired = true;
-            ShowCaptcha();
-            tbPassword.Clear();
-        }
-
-        private void ShowCaptcha()
-        {
-            tbCaptcha.Visibility = Visibility.Visible;
-            tblCaptcha.Visibility = Visibility.Visible;
-            tblCaptcha.Text = SimpleCaptcha.Create();
-            tblCaptcha.TextDecorations = TextDecorations.Strikethrough;
-            tbCaptcha.Clear();
-        }
-
-        private void HideCaptcha()
-        {
-            tbCaptcha.Visibility = Visibility.Hidden;
-            tblCaptcha.Visibility = Visibility.Hidden;
-            captchaRequired = false;
-        }
-
+        /// Определение роли пользователя
         private string GetRole(Users user)
         {
             try
             {
                 using (var db = new AutobaseEntities())
                 {
-                    // Загружаем пользователя с связанными данными
-                    var currentUser = db.Users
-                        .Include("Employees.EmployeePositions")
+                    // Загрузка связанных данных о сотруднике/клиенте
+                    var dbUser = db.Users
+                        .Include(u => u.Employees.EmployeePositions)
+                        .Include(u => u.Clients)
                         .FirstOrDefault(u => u.UserID == user.UserID);
 
-                    // Если пользователь - сотрудник, проверяем его должность
-                    if (currentUser?.Employees != null)
+                    // Проверка роли сотрудника
+                    if (dbUser?.Employees != null)
                     {
-                        var positionName = currentUser.Employees.EmployeePositions?.PositionName;
-
-                        if (!string.IsNullOrEmpty(positionName))
+                        var position = dbUser.Employees.EmployeePositions?.PositionName;
+                        if (!string.IsNullOrEmpty(position))
                         {
-                            // Определяем роль по должности
-                            if (positionName.Contains("Директор")) return "Директор";
-                            if (positionName.Contains("Менеджер")) return "Менеджер";
-                            if (positionName.Contains("Водитель")) return "Водитель";
-                            if (positionName.Contains("Диспетчер")) return "Диспетчер";
-                            if (positionName.Contains("Механик")) return "Механик";
+                            // Определение конкретной должности
+                            if (position.Contains("Директор")) return "Директор";
+                            if (position.Contains("Менеджер")) return "Менеджер";
+                            if (position.Contains("Водитель")) return "Водитель";
+                            if (position.Contains("Диспетчер")) return "Диспетчер";
+                            if (position.Contains("Механик")) return "Механик";
                         }
+                        return "Сотрудник"; // Роль по умолчанию для сотрудников
+                    }
 
-                        return "Сотрудник";
-                    }
-                    // Если пользователь - клиент
-                    else if (currentUser?.Clients != null)
-                    {
-                        return "Клиент";
-                    }
+                    // Проверка роли клиента
+                    if (dbUser?.Clients != null) return "Клиент";
+
+                    // Fallback: определение роли по email
+                    var email = user.Email.ToLower();
+                    if (email.Contains("admin")) return "Администратор";
+                    if (email.Contains("director")) return "Директор";
+                    if (email.Contains("manager")) return "Менеджер";
+
+                    return "Пользователь"; // Роль по умолчанию
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show($"Ошибка определения роли: {ex.Message}");
+                return "Пользователь"; // При ошибке - роль по умолчанию
             }
-
-            // Fallback: проверяем по email
-            var email = user.Email.ToLower();
-            if (email.Contains("admin")) return "Администратор";
-            if (email.Contains("director")) return "Директор";
-            if (email.Contains("manager")) return "Менеджер";
-            if (email.Contains("driver")) return "Водитель";
-            if (email.Contains("dispatcher")) return "Диспетчер";
-            if (email.Contains("mechanic")) return "Механик";
-            if (email.Contains("client")) return "Клиент";
-
-            return "Пользователь";
         }
 
+        /// Обработка успешного входа
+        private void LoginSuccess(Users user)
+        {
+            var role = GetRole(user);
+            MessageBox.Show($"Вы вошли как: {role}");
+            NavigateToClient(user, role);
+            ResetLoginAttempts(); // Сброс счетчика попыток
+        }
+
+        /// Обработка неудачного входа
+        private void HandleFailedLogin()
+        {
+            _attempts++; // Увеличение счетчика попыток
+            MessageBox.Show("Неверный логин или пароль!");
+
+            // Показ капчи после 2х неудачных попыток
+            if (captchaRequired) ShowCaptcha();
+            tbPassword.Clear(); // Очистка поля пароля
+
+            // Блокировка формы после 4х неудачных попыток
+            if (_attempts >= 4) BlockForm(10);
+        }
+
+        // ==================== МЕТОДЫ КАПЧИ ====================
+
+        /// Валидация введенной капчи
+        private bool ValidateCaptcha()
+        {
+            // Сравнение введенного текста с капчей (игнорируя пробелы)
+            if (tbCaptcha.Text.Trim() != tblCaptcha.Text.Replace(" ", ""))
+            {
+                MessageBox.Show("Неверная капча!");
+                ShowCaptcha(); // Показ новой капчи
+                return false;
+            }
+            return true;
+        }
+
+        /// Показ элементов капчи
+        private void ShowCaptcha()
+        {
+            tblCaptcha.Text = Services.SimpleCaptcha.Create(); // Генерация капчи
+            tblCaptcha.Visibility = Visibility.Visible;
+            tbCaptcha.Visibility = Visibility.Visible;
+            tbCaptcha.Clear(); // Очистка поля ввода капчи
+        }
+
+        /// Скрытие элементов капчи
+        private void HideCaptcha()
+        {
+            tblCaptcha.Visibility = Visibility.Hidden;
+            tbCaptcha.Visibility = Visibility.Hidden;
+        }
+
+        // ==================== МЕТОДЫ УПРАВЛЕНИЯ ФОРМОЙ ====================
+
+        /// Навигация на страницу клиента
+        private void NavigateToClient(Users user, string role) =>
+            NavigationService.Navigate(new Client(user, role));
+
+        /// Сброс счетчика попыток входа
+        private void ResetLoginAttempts()
+        {
+            _attempts = 0;
+            HideCaptcha(); // Скрытие капчи
+            ResetForm();   // Очистка полей формы
+        }
+
+        /// Очистка полей формы
         private void ResetForm()
         {
-            if (!isBlocked)
-            {
-                tbLogin.Clear();
-                tbPassword.Clear();
-                tbCaptcha.Clear();
-                HideCaptcha();
-            }
+            tbLogin.Clear();
+            tbPassword.Clear();
+            tbCaptcha.Clear();
         }
 
+        /// Блокировка формы на указанное время
         private void BlockForm(int seconds)
         {
-            isBlocked = true;
-            remainingBlockTime = seconds;
+            _isBlocked = true;
+            _blockTimeRemaining = seconds;
 
-            tbLogin.IsEnabled = false;
-            tbPassword.IsEnabled = false;
-            tbCaptcha.IsEnabled = false;
-            btnEnter.IsEnabled = false;
-            btnEnterGuest.IsEnabled = false;
-
-            tbTimer.Visibility = Visibility.Visible;
-            UpdateTimerText();
-
-            blockTimer.Start();
+            SetControlsEnabled(false); // Отключение элементов управления
+            tbTimer.Visibility = Visibility.Visible; // Показ таймера
+            _blockTimer.Start(); // Запуск таймера блокировки
         }
 
-        private int remainingBlockTime = 0;
-
-        private void BlockTimer_Tick(object sender, EventArgs e)
-        {
-            remainingBlockTime--;
-            UpdateTimerText();
-
-            if (remainingBlockTime <= 0)
-            {
-                UnblockForm();
-            }
-        }
-
-        private void UpdateTimerText()
-        {
-            tbTimer.Text = $"До разблокировки осталось: {remainingBlockTime} сек.";
-        }
-
+        /// Разблокировка формы
         private void UnblockForm()
         {
-            blockTimer.Stop();
-            isBlocked = false;
-            attempts = 0;
-            captchaRequired = false;
+            _blockTimer.Stop(); // Остановка таймера
+            _isBlocked = false;
+            _attempts = 0; // Сброс счетчика попыток
 
-            tbLogin.IsEnabled = true;
-            tbPassword.IsEnabled = true;
-            tbCaptcha.IsEnabled = true;
-            btnEnter.IsEnabled = true;
-            btnEnterGuest.IsEnabled = true;
+            SetControlsEnabled(true); // Включение элементов управления
+            tbTimer.Visibility = Visibility.Collapsed; // Скрытие таймера
+            ResetForm(); // Очистка полей формы
+        }
 
-            tbTimer.Visibility = Visibility.Collapsed;
+        /// Установка состояния доступности элементов управления
+        /// <param name="enabled">Доступность элементов</param>
+        private void SetControlsEnabled(bool enabled)
+        {
+            tbLogin.IsEnabled = enabled;
+            tbPassword.IsEnabled = enabled;
+            tbCaptcha.IsEnabled = enabled;
+            btnEnter.IsEnabled = enabled;
+            btnEnterGuest.IsEnabled = enabled;
+        }
 
-            ResetForm();
+        // ==================== МЕТОДЫ ТАЙМЕРА ====================
+
+        /// Инициализация таймера блокировки
+        private void InitializeTimer()
+        {
+            _blockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _blockTimer.Tick += (s, e) =>
+            {
+                // Уменьшение оставшегося времени
+                if (--_blockTimeRemaining <= 0) UnblockForm();
+
+                // Обновление текста таймера
+                tbTimer.Text = $"До разблокировки: {_blockTimeRemaining} сек.";
+            };
         }
     }
 }

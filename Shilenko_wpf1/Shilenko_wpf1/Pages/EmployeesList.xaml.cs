@@ -1,121 +1,102 @@
 ﻿using Shilenko_wpf1.Models;
 using System;
-using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace Shilenko_wpf1.Pages
 {
+    // Страница для отображения списка сотрудников с фильтрацией
     public partial class EmployeesList : Page
     {
-        private AutobaseEntities _db;
-        private List<Employees> _allEmployees;
-
+        // Конструктор страницы
         public EmployeesList()
         {
             InitializeComponent();
-            LoadData();
+            Loaded += (s, e) => LoadData(); // Загрузка данных при загрузке страницы
         }
 
-        private void Page_Loaded(object sender, RoutedEventArgs e)
-        {
-            LoadData();
-        }
+        // ==================== МЕТОДЫ ЗАГРУЗКИ ДАННЫХ ====================
 
-
+        // Основная загрузка данных сотрудников и должностей
         private void LoadData()
         {
             try
             {
-                if (_db != null)
+                using (var db = new AutobaseEntities())
                 {
-                    _db.Dispose();
+                    // Загрузка списка сотрудников с должностями
+                    var employees = db.Employees.Include(e => e.EmployeePositions).ToList();
+                    lvEmployees.ItemsSource = employees; // Привязка к ListView
+
+                    // Загрузка должностей для фильтра
+                    var positions = db.EmployeePositions.Select(p => p.PositionName).ToList();
+                    cmbPositionFilter.Items.Clear();
+                    cmbPositionFilter.Items.Add("Все должности");
+                    positions.ForEach(p => cmbPositionFilter.Items.Add(p)); // Добавление должностей
+                    cmbPositionFilter.SelectedIndex = 0; // Выбор элемента по умолчанию
+
+                    UpdateStatus(employees.Count); // Обновление статуса
                 }
-
-                _db = new AutobaseEntities();
-                _allEmployees = _db.Employees.Include("EmployeePositions").ToList();
-
-                lvEmployees.ItemsSource = _allEmployees;
-
-                // Заполняем фильтр должностей
-                var positions = _db.EmployeePositions.ToList();
-                cmbPositionFilter.Items.Clear();
-                cmbPositionFilter.Items.Add("Все должности");
-                foreach (var pos in positions)
-                {
-                    cmbPositionFilter.Items.Add(pos.PositionName);
-                }
-                cmbPositionFilter.SelectedIndex = 0;
-
-                UpdateStatus();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка загрузки данных: {ex.Message}");
+                MessageBox.Show($"Ошибка: {ex.Message}"); // Обработка ошибок
             }
         }
 
-        private void UpdateStatus()
-        {
-            int count = lvEmployees.Items.Count;
-            tbStatus.Text = $"Найдено сотрудников: {count}";
-        }
+        // Обновление статусной строки с количеством сотрудников
+        private void UpdateStatus(int count) => tbStatus.Text = $"Найдено сотрудников: {count}";
 
-        private void txtSearch_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            ApplyFilters();
-        }
+        // ==================== МЕТОДЫ ФИЛЬТРАЦИИ ====================
 
-        private void cmbPositionFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            ApplyFilters();
-        }
-
+        // Применение фильтров к списку сотрудников
         private void ApplyFilters()
         {
-            if (_allEmployees == null) return;
-
-            var filtered = _allEmployees.AsEnumerable();
-
-            // Применяем поиск по ФИО
-            string searchText = txtSearch.Text?.ToLower();
-            if (!string.IsNullOrWhiteSpace(searchText))
+            using (var db = new AutobaseEntities())
             {
-                filtered = filtered.Where(emp =>
-                    (emp.LastName?.ToLower().Contains(searchText) ?? false) ||
-                    (emp.FirstName?.ToLower().Contains(searchText) ?? false) ||
-                    ((emp.LastName + " " + emp.FirstName).ToLower().Contains(searchText)));
-            }
+                var query = db.Employees.Include(e => e.EmployeePositions).AsQueryable(); // Базовый запрос
 
-            // Применяем фильтр по должности
-            if (cmbPositionFilter.SelectedIndex > 0)
-            {
-                string selectedPosition = cmbPositionFilter.SelectedItem.ToString();
-                filtered = filtered.Where(emp =>
-                    emp.EmployeePositions?.PositionName == selectedPosition);
-            }
+                // Фильтр по поиску в ФИО
+                if (!string.IsNullOrWhiteSpace(txtSearch.Text))
+                {
+                    string search = txtSearch.Text.ToLower();
+                    query = query.Where(e =>
+                        e.LastName.ToLower().Contains(search) || // Поиск по фамилии
+                        e.FirstName.ToLower().Contains(search));  // Поиск по имени
+                }
 
-            lvEmployees.ItemsSource = filtered.ToList();
-            UpdateStatus();
+                // Фильтр по должности (если выбрано не "Все должности")
+                if (cmbPositionFilter.SelectedIndex > 0)
+                {
+                    string position = cmbPositionFilter.SelectedItem.ToString();
+                    query = query.Where(e => e.EmployeePositions.PositionName == position); // Фильтр по должности
+                }
+
+                var result = query.ToList(); // Выполнение запроса
+                lvEmployees.ItemsSource = result; // Обновление списка
+                UpdateStatus(result.Count); // Обновление счетчика
+            }
         }
 
-        private void btnAddEmployee_Click(object sender, RoutedEventArgs e)
-        {
-            // Переход на страницу добавления сотрудника (режим создания)
-            NavigationService.Navigate(new EmployeeEdit(null));
-        }
+        // ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
 
-        private void lvEmployees_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        // Обработчик изменения текста поиска
+        private void txtSearch_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilters();
+
+        // Обработчик изменения выбора должности
+        private void cmbPositionFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilters();
+
+        // Обработчик кнопки добавления нового сотрудника
+        private void btnAddEmployee_Click(object sender, RoutedEventArgs e) =>
+            NavigationService.Navigate(new EmployeeEdit(null)); // Переход на форму редактирования
+
+        // Обработчик двойного клика по сотруднику
+        private void lvEmployees_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            // Переход на страницу редактирования сотрудника
-            var selectedEmployee = lvEmployees.SelectedItem as Employees;
-            if (selectedEmployee != null)
-            {
-                NavigationService.Navigate(new EmployeeEdit(selectedEmployee));
-            }
+            if (lvEmployees.SelectedItem is Employees employee) // Проверка выбора
+                NavigationService.Navigate(new EmployeeEdit(employee)); // Редактирование сотрудника
         }
     }
 }
